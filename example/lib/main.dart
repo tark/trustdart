@@ -1,6 +1,10 @@
+import 'dart:typed_data';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:trustdart/trustdart.dart';
+import 'dart:convert';
 
 void main() {
   runApp(MyApp());
@@ -18,8 +22,69 @@ class _MyAppState extends State<MyApp> {
     initPlatformState();
   }
 
-//f33e86906e93690567a58af681ceabf10fe64bb9b441fe847fd5629d6f262973
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        appBar: AppBar(
+          title: const Text('Plugin example app'),
+        ),
+        body: Center(
+          child: Column(
+            children: [
+              ElevatedButton(
+                onPressed: () async {
+                  print("test");
+                  final entropy = sha256.convert(utf8.encode('test'));
+                  final mnemonic = await Trustdart.generateMnemonicWithEntropy(Uint8List.fromList(entropy.bytes));
+                  print('Mnemonic: $mnemonic');
+                },
+                child: Text('Generate wallet from entropy'),
+              ),
+              Container(
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.all(16.0),
+                    backgroundColor: Colors.red,
+                    primary: Colors.black,
+                    textStyle: const TextStyle(fontSize: 20),
+                  ),
+                  onPressed: () {},
+                  child: const Text('Create a new multi-coin wallet'),
+                ),
+              ),
+              Container(
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.all(16.0),
+                    backgroundColor: Colors.yellow,
+                    primary: Colors.black,
+                    textStyle: const TextStyle(fontSize: 20),
+                  ),
+                  onPressed: () {},
+                  child: const Text('Generate the default addresses.'),
+                ),
+              ),
+              Container(
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.all(16.0),
+                    backgroundColor: Colors.green,
+                    primary: Colors.black,
+                    textStyle: const TextStyle(fontSize: 20),
+                  ),
+                  onPressed: () {},
+                  child: const Text('Sign transactions for sending.'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
+  //
   Map _getTezosOperation() {
     return {
       "operationList": {
@@ -88,33 +153,43 @@ class _MyAppState extends State<MyApp> {
 
   Map _getTronOperation() {
     return {
-      "cmd": "TRC20", // can be TRC20 | TRX | TRC10 | CONTRACT | FREEZE
-      "ownerAddress": "TYjYrDy7yE9vyJfnF5S3EfPrzfXM3eehri", // from address
-      "toAddress": "TJpQNJZSktSZQgEthhBapH3zmvg3RaCbKW", // to address
-      "contractAddress":
-          "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", // in case of Trc20 (Tether USDT)
-      "timestamp": DateTime.now()
-          .millisecondsSinceEpoch, // current timestamp (or timestamp as at signing) milliseconds
-      "amount":
-          "000F4240", // 27 * 1000000, // "004C4B40", // "000F4240" = 1000000 sun hex 2's signed complement
+      "cmd": "TRC20",
+      // can be TRC20 | TRX | TRC10 | CONTRACT | FREEZE
+      "ownerAddress": "TYjYrDy7yE9vyJfnF5S3EfPrzfXM3eehri",
+      // from address
+      "toAddress": "TJpQNJZSktSZQgEthhBapH3zmvg3RaCbKW",
+      // to address
+      "contractAddress": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+      // in case of Trc20 (Tether USDT)
+      "timestamp": DateTime.now().millisecondsSinceEpoch,
+      // current timestamp (or timestamp as at signing) milliseconds
+      "amount": "000F4240",
+      // 27 * 1000000, // "004C4B40", // "000F4240" = 1000000 sun hex 2's signed complement
       // (https://www.rapidtables.com/convert/number/hex-to-decimal.html)
       // for asset TRC20 | integer for any other in SUN, 1000000 SUN = 1 TRX
       "feeLimit": 10000000,
       // reference block data to be obtained by querying the blockchain
-      "blockTime":
-          1638519600000, // timestamp of block to be included milliseconds
+      "blockTime": 1638519600000,
+      // timestamp of block to be included milliseconds
       "txTrieRoot":
-          "5807aea383e7de836af95c8b36e22654e4df33e5b92768e55fb936f8a7ae5304", // trie root of block
-      "witnessAddress":
-          "41e5e572797a3d479030e2596a239bd142a890a305", // address of witness that signed block
+          "5807aea383e7de836af95c8b36e22654e4df33e5b92768e55fb936f8a7ae5304",
+      // trie root of block
+      "witnessAddress": "41e5e572797a3d479030e2596a239bd142a890a305",
+      // address of witness that signed block
       "parentHash":
-          "0000000002254183f6d15ba4115b3a5e8a8359adc663f7e6f02fa2bd51c07055", // parent hash of block
-      "version": 23, // block version
-      "number": 35996036, // block number
+          "0000000002254183f6d15ba4115b3a5e8a8359adc663f7e6f02fa2bd51c07055",
+      // parent hash of block
+      "version": 23,
+      // block version
+      "number": 35996036,
+      // block number
       // freezing
-      "frozenDuration": 3, // frozen duration
-      "frozenBalance": 10000000, // frozen balance in SUN
-      "resource": "ENERGY", // Resource type: BANDWIDTH | ENERGY
+      "frozenDuration": 3,
+      // frozen duration
+      "frozenBalance": 10000000,
+      // frozen balance in SUN
+      "resource": "ENERGY",
+      // Resource type: BANDWIDTH | ENERGY
       "assetName": "ALLOW_SAME_TOKEN_NAME"
     };
   }
@@ -141,6 +216,9 @@ class _MyAppState extends State<MyApp> {
     // Platform messages may fail, so we use a try/catch PlatformException.
     // We also handle the message potentially returning null.
     try {
+
+      Trustdart();
+
       String mnemonic = await Trustdart.generateMnemonic();
       print('Here is our mnemonic: \n$mnemonic');
       String dondo =
@@ -340,58 +418,5 @@ class _MyAppState extends State<MyApp> {
     // message was in flight, we want to discard the reply rather than calling
     // setState to update our non-existent appearance.
     if (!mounted) return;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Plugin example app'),
-        ),
-        body: Center(
-            child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            Container(
-              child: TextButton(
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.all(16.0),
-                  backgroundColor: Colors.red,
-                  primary: Colors.black,
-                  textStyle: const TextStyle(fontSize: 20),
-                ),
-                onPressed: () {},
-                child: const Text('Create a new multi-coin wallet'),
-              ),
-            ),
-            Container(
-              child: TextButton(
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.all(16.0),
-                  backgroundColor: Colors.yellow,
-                  primary: Colors.black,
-                  textStyle: const TextStyle(fontSize: 20),
-                ),
-                onPressed: () {},
-                child: const Text('Generate the default addresses.'),
-              ),
-            ),
-            Container(
-              child: TextButton(
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.all(16.0),
-                  backgroundColor: Colors.green,
-                  primary: Colors.black,
-                  textStyle: const TextStyle(fontSize: 20),
-                ),
-                onPressed: () {},
-                child: const Text('Sign transactions for sending.'),
-              ),
-            ),
-          ],
-        )),
-      ),
-    );
   }
 }
