@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 
@@ -10,24 +11,63 @@ import 'package:flutter/services.dart';
 class Trustdart {
   static const MethodChannel _channel = const MethodChannel('trustdart');
 
+  Trustdart() {
+    _channel.setMethodCallHandler((call) async {
+      // check if we are receiving the coordinates
+      // and put it to the DB
+      switch (call.method) {
+        case 'on_log_sent':
+          var message = call.arguments;
+          print(message);
+          break;
+      }
+    });
+  }
+
   static Future<String> generateMnemonic([String passphrase = ""]) async {
     try {
-      final String mnemonic =
-          await _channel.invokeMethod('generateMnemonic', passphrase);
+      final String mnemonic = await _channel.invokeMethod(
+        'generateMnemonic',
+        passphrase,
+      );
       return mnemonic;
     } catch (e) {
       return "";
     }
   }
 
-  static Future<bool> checkMnemonic(String mnemonic,
-      [String passphrase = ""]) async {
+  static Future<String> generateMnemonicWithEntropy(
+    Uint8List entropy, [
+    String passphrase = "",
+  ]) async {
     try {
-      final bool importStatus =
-          await _channel.invokeMethod('checkMnemonic', <String, String>{
-        'mnemonic': mnemonic,
-        'passphrase': passphrase,
-      });
+      print('generateMnemonicWithEntropy - $entropy');
+      final String mnemonic = await _channel.invokeMethod(
+        'generateMnemonicWithEntropy',
+        {
+          'entropy': entropy,
+          'passphrase': passphrase,
+        },
+      );
+      return mnemonic;
+    } catch (e) {
+      print('generateMnemonicWithEntropy - ${e.toString()}');
+      return "";
+    }
+  }
+
+  static Future<bool> checkMnemonic(
+    String mnemonic, [
+    String passphrase = "",
+  ]) async {
+    try {
+      final bool importStatus = await _channel.invokeMethod(
+        'checkMnemonic',
+        <String, String>{
+          'mnemonic': mnemonic,
+          'passphrase': passphrase,
+        },
+      );
       return importStatus;
     } catch (e) {
       return false;
@@ -35,16 +75,22 @@ class Trustdart {
   }
 
   /// generates an address for a particular coin
-  static Future<Map> generateAddress(String mnemonic, String coin, String path,
-      [String passphrase = ""]) async {
+  static Future<Map> generateAddress(
+    String mnemonic,
+    String coin,
+    String path, [
+    String passphrase = "",
+  ]) async {
     try {
-      final Map address =
-          await _channel.invokeMethod('generateAddress', <String, String>{
-        'coin': coin,
-        'path': path,
-        'mnemonic': mnemonic,
-        'passphrase': passphrase,
-      });
+      final Map address = await _channel.invokeMethod(
+        'generateAddress',
+        <String, String>{
+          'coin': coin,
+          'path': path,
+          'mnemonic': mnemonic,
+          'passphrase': passphrase,
+        },
+      );
       return address;
     } catch (e) {
       return {'legacy': ''};
@@ -54,11 +100,13 @@ class Trustdart {
   /// validates address belonging to a particular crypto
   static Future<bool> validateAddress(String coin, String address) async {
     try {
-      final bool isAddressValid =
-          await _channel.invokeMethod('validateAddress', <String, String>{
-        'coin': coin,
-        'address': address,
-      });
+      final bool isAddressValid = await _channel.invokeMethod(
+        'validateAddress',
+        <String, String>{
+          'coin': coin,
+          'address': address,
+        },
+      );
       return isAddressValid;
     } catch (e) {
       return false;
@@ -66,16 +114,22 @@ class Trustdart {
   }
 
   /// Returns the hex string format of the public key.
-  static Future<String> getPublicKey(String mnemonic, String coin, String path,
-      [String passphrase = ""]) async {
+  static Future<String> getPublicKey(
+    String mnemonic,
+    String coin,
+    String path, [
+    String passphrase = "",
+  ]) async {
     try {
-      final String publicKey =
-          await _channel.invokeMethod('getPublicKey', <String, String>{
-        'coin': coin,
-        'path': path,
-        'mnemonic': mnemonic,
-        'passphrase': passphrase,
-      });
+      final String publicKey = await _channel.invokeMethod(
+        'getPublicKey',
+        <String, String>{
+          'coin': coin,
+          'path': path,
+          'mnemonic': mnemonic,
+          'passphrase': passphrase,
+        },
+      );
       return publicKey;
     } catch (e) {
       return '';
@@ -83,16 +137,22 @@ class Trustdart {
   }
 
   /// Returns the hex string format of the private key.
-  static Future<String> getPrivateKey(String mnemonic, String coin, String path,
-      [String passphrase = ""]) async {
+  static Future<String> getPrivateKey(
+    String mnemonic,
+    String coin,
+    String path, [
+    String passphrase = "",
+  ]) async {
     try {
-      final String privateKey =
-          await _channel.invokeMethod('getPrivateKey', <String, String>{
-        'coin': coin,
-        'path': path,
-        'mnemonic': mnemonic,
-        'passphrase': passphrase,
-      });
+      final String privateKey = await _channel.invokeMethod(
+        'getPrivateKey',
+        <String, String>{
+          'coin': coin,
+          'path': path,
+          'mnemonic': mnemonic,
+          'passphrase': passphrase,
+        },
+      );
       return privateKey;
     } catch (e) {
       return '';
@@ -101,17 +161,23 @@ class Trustdart {
 
   ///signs a transaction
   static Future<String> signTransaction(
-      String mnemonic, String coin, String path, Map txData,
-      [String passphrase = ""]) async {
+    String mnemonic,
+    String coin,
+    String path,
+    Map txData, [
+    String passphrase = "",
+  ]) async {
     try {
-      final String txHash =
-          await _channel.invokeMethod('signTransaction', <String, dynamic>{
-        'coin': coin,
-        'txData': txData,
-        'path': path,
-        'mnemonic': mnemonic,
-        'passphrase': passphrase,
-      });
+      final String txHash = await _channel.invokeMethod(
+        'signTransaction',
+        <String, dynamic>{
+          'coin': coin,
+          'txData': txData,
+          'path': path,
+          'mnemonic': mnemonic,
+          'passphrase': passphrase,
+        },
+      );
       return txHash;
     } catch (e) {
       return '';
