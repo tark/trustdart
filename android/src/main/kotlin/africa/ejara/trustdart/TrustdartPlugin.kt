@@ -298,30 +298,84 @@ class TrustdartPlugin : FlutterPlugin, MethodCallHandler {
   }
 
   private fun getPrivateKey(wallet: HDWallet, coin: String, path: String): String? {
-    return when (coin) {
-      "BTC" -> {
 
-        val privateKey = wallet.getKey(CoinType.BITCOIN, path)
-        Base64.getEncoder().encodeToString(privateKey.data())
-      }
-      "ETH" -> {
-        val privateKey = wallet.getKey(CoinType.ETHEREUM, path)
-        Base64.getEncoder().encodeToString(privateKey.data())
-      }
-      "XTZ" -> {
-        val privateKey = wallet.getKey(CoinType.TEZOS, path)
-        Base64.getEncoder().encodeToString(privateKey.data())
-      }
-      "TRX" -> {
-        val privateKey = wallet.getKey(CoinType.TRON, path)
-        Base64.getEncoder().encodeToString(privateKey.data())
-      }
-      "SOL" -> {
-        val privateKey = wallet.getKey(CoinType.SOLANA, path)
-        Base64.getEncoder().encodeToString(privateKey.data())
-      }
+    val coinType: CoinType = when (coin) {
+      "BTC" -> CoinType.BITCOIN
+      "AE" -> CoinType.AETERNITY
+      "AION" -> CoinType.AION
+      "BNB" -> CoinType.BINANCE
+      "BCH" -> CoinType.BITCOINCASH
+      "BTG" -> CoinType.BITCOINGOLD
+      "CLO" -> CoinType.CALLISTO
+      "ADA" -> CoinType.CARDANO
+      "ATOM" -> CoinType.COSMOS
+      "DASH" -> CoinType.DASH
+      "DCR" -> CoinType.DECRED
+      "DGB" -> CoinType.DIGIBYTE
+      "DOGE" -> CoinType.DOGECOIN
+      "EOS" -> CoinType.EOS
+      "ETH" -> CoinType.ETHEREUM
+      "ETC" -> CoinType.ETHEREUMCLASSIC
+      "FIO" -> CoinType.FIO
+      "GO" -> CoinType.GOCHAIN
+      "GRS" -> CoinType.GROESTLCOIN
+      "ICX" -> CoinType.ICON
+      "IOTX" -> CoinType.IOTEX
+      "KAVA" -> CoinType.KAVA
+      "KIN" -> CoinType.KIN
+      "LTC" -> CoinType.LITECOIN
+      "MONA" -> CoinType.MONACOIN
+      "NAS" -> CoinType.NEBULAS
+      "NULS" -> CoinType.NULS
+      "XNO" -> CoinType.NANO
+      "NEAR" -> CoinType.NEAR
+      "NIM" -> CoinType.NIMIQ
+      "ONT" -> CoinType.ONTOLOGY
+      "POA" -> CoinType.POANETWORK
+      "QTUM" -> CoinType.QTUM
+      "XRP" -> CoinType.XRP
+      "SOL" -> CoinType.SOLANA
+      "XLM" -> CoinType.STELLAR
+      "XTZ" -> CoinType.TEZOS
+      "THETA" -> CoinType.THETA
+      "TT" -> CoinType.THUNDERTOKEN
+      "NEO" -> CoinType.NEO
+      "TOMO" -> CoinType.TOMOCHAIN
+      "TRX" -> CoinType.TRON
+      "VET" -> CoinType.VECHAIN
+      "VIA" -> CoinType.VIACOIN
+      "WAN" -> CoinType.WANCHAIN
+      "ZEC" -> CoinType.ZCASH
+      "BUZZ" -> CoinType.ZCOIN
+      "ZIL" -> CoinType.ZILLIQA
+      "FLUX" -> CoinType.ZELCASH
+      "RVN" -> CoinType.RAVENCOIN
+      "WAVES" -> CoinType.WAVES
+      "LUNA" -> CoinType.TERRA
+      "ONE" -> CoinType.HARMONY
+      "ALGO" -> CoinType.ALGORAND
+      "KSM" -> CoinType.KUSAMA
+      "DOT" -> CoinType.POLKADOT
+      "FIL" -> CoinType.FILECOIN
+      "EGLD" -> CoinType.ELROND
+      "BAND" -> CoinType.BANDCHAIN
+      "SMARTCHAINLEGACY" -> CoinType.SMARTCHAINLEGACY // ?
+      "SMARTCHAIN" -> CoinType.SMARTCHAIN // ?
+      "OASIS" -> CoinType.OASIS
+      "MATIC" -> CoinType.POLYGON
+      "RUNE" -> CoinType.THORCHAIN
+      "BLZ" -> CoinType.BLUZELLE
+      "OPTIMISM" -> CoinType.OPTIMISM
+      "ARBITRUM" -> CoinType.ARBITRUM
+      "ECOC" -> CoinType.ECOCHAIN
+      "AVAX" -> CoinType.AVALANCHECCHAIN
+      "XDAI" -> CoinType.XDAI
+      "FTM" -> CoinType.FANTOM
       else -> null
-    }
+    } ?: return null
+
+    val privateKey = wallet.getKey(coinType, path)
+    return Base64.getEncoder().encodeToString(privateKey.data())
   }
 
   private fun signTransaction(
