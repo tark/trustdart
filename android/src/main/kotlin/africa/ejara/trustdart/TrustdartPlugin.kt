@@ -214,92 +214,319 @@ class TrustdartPlugin : FlutterPlugin, MethodCallHandler {
     channel.setMethodCallHandler(null)
   }
 
-  private fun generateAddress(wallet: HDWallet, path: String, coin: String): Map<String, String?>? {
+  private fun generateAddress(
+    wallet: HDWallet,
+    path: String,
+    symbol: String
+  ): Map<String, String?>? {
+
+    // special case for BTC
+    // todo check if we need it for BCH as well
+    if (symbol == "BTC") {
+      val privateKey = wallet.getKey(CoinType.BITCOIN, path)
+      val publicKey = privateKey.getPublicKeySecp256k1(true)
+      val address = BitcoinAddress(publicKey, CoinType.BITCOIN.p2pkhPrefix())
+      return mapOf(
+        "legacy" to address.description(),
+        "segwit" to CoinType.BITCOIN.deriveAddress(privateKey)
+      )
+    }
+
+    val coinType = getCoinTypeFromSymbol(symbol) ?: return null
+    val privateKey = wallet.getKey(coinType, path)
+    return mapOf("legacy" to coinType.deriveAddress(privateKey))
+  }
+
+  private fun validateAddress(symbol: String, address: String): Boolean {
+    val coinType = getCoinTypeFromSymbol(symbol) ?: return false
+    return coinType.validate(address)
+  }
+
+  private fun getPublicKey(wallet: HDWallet, symbol: String, path: String): String? {
+    val coinType = getCoinTypeFromSymbol(symbol) ?: return null
+    val privateKey = wallet.getKey(coinType, path)
+    val publicKey = privateKey.getPublicKeySecp256k1(true)
+    return Base64.getEncoder().encodeToString(publicKey.data())
+    // todo check why XTZ and SOL need to use getPublicKeyEd25519 instead
+    // and what other coins have to use it
+
+  }
+
+  private fun getPrivateKey(wallet: HDWallet, symbol: String, path: String): String? {
+    val coinType = getCoinTypeFromSymbol(symbol) ?: return null
+    val privateKey = wallet.getKey(coinType, path)
+    return Base64.getEncoder().encodeToString(privateKey.data())
+  }
+
+  private fun signTransaction(
+    wallet: HDWallet,
+    coin: String,
+    path: String,
+    txData: Map<String, Any>
+  ): String? {
     return when (coin) {
+      "XTZ" -> {
+        signTezosTransaction(wallet, path, txData)
+      }
+      "ETH" -> {
+        signEthereumTransaction(wallet, path, txData)
+      }
       "BTC" -> {
-        val privateKey = wallet.getKey(CoinType.BITCOIN, path)
-        val publicKey = privateKey.getPublicKeySecp256k1(true)
-        val address = BitcoinAddress(publicKey, CoinType.BITCOIN.p2pkhPrefix())
-        mapOf(
-          "legacy" to address.description(),
-          "segwit" to CoinType.BITCOIN.deriveAddress(privateKey)
+        signBitcoinTransaction(wallet, path, txData)
+      }
+      "TRX" -> {
+        signTronTransaction(wallet, path, txData)
+      }
+      "SOL" -> {
+        signSolanaTransaction(wallet, path, txData)
+      }
+      else -> null
+    }
+  }
+
+  private fun signTronTransaction(
+    wallet: HDWallet,
+    path: String,
+    txData: Map<String, Any>
+  ): String? {
+    val cmd = txData["cmd"] as String
+    val privateKey = wallet.getKey(CoinType.TRON, path)
+    val txHash: String?
+    when (cmd) {
+      "TRC20" -> {
+        val trc20Contract = Tron.TransferTRC20Contract.newBuilder()
+          .setOwnerAddress(txData["ownerAddress"] as String)
+          .setContractAddress(txData["contractAddress"] as String)
+          .setToAddress(txData["toAddress"] as String)
+          .setAmount(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["amount"] as String))))
+
+        val blockHeader = Tron.BlockHeader.newBuilder()
+          .setTimestamp(txData["blockTime"] as Long)
+          .setTxTrieRoot(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["txTrieRoot"] as String))))
+          .setParentHash(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["parentHash"] as String))))
+          .setNumber((txData["number"] as Int).toLong())
+          .setWitnessAddress(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["witnessAddress"] as String))))
+          .setVersion(txData["version"] as Int)
+          .build()
+
+        val transaction = Tron.Transaction.newBuilder()
+          .setTimestamp(txData["timestamp"] as Long)
+          .setTransferTrc20Contract(trc20Contract)
+          .setBlockHeader(blockHeader)
+          .setFeeLimit((txData["feeLimit"] as Int).toLong())
+          .build()
+
+        val signingInput = Tron.SigningInput.newBuilder()
+          .setTransaction(transaction)
+          .setPrivateKey(ByteString.copyFrom(privateKey.data()))
+
+        val output = AnySigner.sign(
+          signingInput.build(),
+          CoinType.TRON,
+          Tron.SigningOutput.parser()
         )
+
+        txHash = output.json
       }
-      "ETH" -> {
-        val privateKey = wallet.getKey(CoinType.ETHEREUM, path)
-        mapOf("legacy" to CoinType.ETHEREUM.deriveAddress(privateKey))
-      }
-      "XTZ" -> {
-        val privateKey = wallet.getKey(CoinType.TEZOS, path)
-        mapOf("legacy" to CoinType.TEZOS.deriveAddress(privateKey))
+      "TRC10" -> {
+        val trc10Contract = Tron.TransferAssetContract.newBuilder()
+          .setOwnerAddress(txData["ownerAddress"] as String)
+          .setAssetName(txData["assetName"] as String)
+          .setToAddress(txData["toAddress"] as String)
+          .setAmount((txData["amount"] as Int).toLong())
+
+        val blockHeader = Tron.BlockHeader.newBuilder()
+          .setTimestamp(txData["blockTime"] as Long)
+          .setTxTrieRoot(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["txTrieRoot"] as String))))
+          .setParentHash(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["parentHash"] as String))))
+          .setNumber((txData["number"] as Int).toLong())
+          .setWitnessAddress(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["witnessAddress"] as String))))
+          .setVersion(txData["version"] as Int)
+          .build()
+
+        val transaction = Tron.Transaction.newBuilder()
+          .setTimestamp(txData["timestamp"] as Long)
+          .setTransferAsset(trc10Contract)
+          .setBlockHeader(blockHeader)
+          .build()
+
+        val signingInput = Tron.SigningInput.newBuilder()
+          .setTransaction(transaction)
+          .setPrivateKey(ByteString.copyFrom(privateKey.data()))
+
+        val output = AnySigner.sign(
+          signingInput.build(),
+          CoinType.TRON,
+          Tron.SigningOutput.parser()
+        )
+        txHash = output.json
       }
       "TRX" -> {
-        val privateKey = wallet.getKey(CoinType.TRON, path)
-        mapOf("legacy" to CoinType.TRON.deriveAddress(privateKey))
+        val transfer = Tron.TransferContract.newBuilder()
+          .setOwnerAddress(txData["ownerAddress"] as String)
+          .setToAddress(txData["toAddress"] as String)
+          .setAmount((txData["amount"] as Int).toLong())
+
+        val blockHeader = Tron.BlockHeader.newBuilder()
+          .setTimestamp(txData["blockTime"] as Long)
+          .setTxTrieRoot(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["txTrieRoot"] as String))))
+          .setParentHash(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["parentHash"] as String))))
+          .setNumber((txData["number"] as Int).toLong())
+          .setWitnessAddress(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["witnessAddress"] as String))))
+          .setVersion(txData["version"] as Int)
+          .build()
+
+        val transaction = Tron.Transaction.newBuilder()
+          .setTimestamp(txData["timestamp"] as Long)
+          .setTransfer(transfer)
+          .setBlockHeader(blockHeader)
+          .build()
+
+        val signingInput = Tron.SigningInput.newBuilder()
+          .setTransaction(transaction)
+          .setPrivateKey(ByteString.copyFrom(privateKey.data()))
+
+        val output = AnySigner.sign(
+          signingInput.build(),
+          CoinType.TRON,
+          Tron.SigningOutput.parser()
+        )
+        txHash = output.json
       }
-      "SOL" -> {
-        val privateKey = wallet.getKey(CoinType.SOLANA, path)
-        mapOf("legacy" to CoinType.SOLANA.deriveAddress(privateKey))
+      "FREEZE" -> {
+        val freezeContract = Tron.FreezeBalanceContract.newBuilder()
+          .setOwnerAddress(txData["ownerAddress"] as String)
+          .setResource(txData["resource"] as String)
+          .setFrozenDuration((txData["frozenDuration"] as Int).toLong())
+          .setFrozenBalance((txData["frozenBalance"] as Int).toLong())
+
+        val blockHeader = Tron.BlockHeader.newBuilder()
+          .setTimestamp(txData["blockTime"] as Long)
+          .setTxTrieRoot(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["txTrieRoot"] as String))))
+          .setParentHash(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["parentHash"] as String))))
+          .setNumber((txData["number"] as Int).toLong())
+          .setWitnessAddress(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["witnessAddress"] as String))))
+          .setVersion(txData["version"] as Int)
+          .build()
+
+        val transaction = Tron.Transaction.newBuilder()
+          .setTimestamp(txData["timestamp"] as Long)
+          .setFreezeBalance(freezeContract)
+          .setBlockHeader(blockHeader)
+          .build()
+
+        val signingInput = Tron.SigningInput.newBuilder()
+          .setTransaction(transaction)
+          .setPrivateKey(ByteString.copyFrom(privateKey.data()))
+
+        val output = AnySigner.sign(
+          signingInput.build(),
+          CoinType.TRON,
+          Tron.SigningOutput.parser()
+        )
+        txHash = output.json
       }
-      else -> null
+      "CONTRACT" -> {
+        txHash = null
+      }
+      else -> txHash = null
     }
+    return txHash
   }
 
-  private fun validateAddress(coin: String, address: String): Boolean {
-    return when (coin) {
-      "BTC" -> {
-        CoinType.BITCOIN.validate(address)
-      }
-      "ETH" -> {
-        CoinType.ETHEREUM.validate(address)
-      }
-      "XTZ" -> {
-        CoinType.TEZOS.validate(address)
-      }
-      "TRX" -> {
-        CoinType.TRON.validate(address)
-      }
-      "SOL" -> {
-        CoinType.SOLANA.validate(address)
-      }
-      else -> false
-    }
+  private fun signTezosTransaction(
+    wallet: HDWallet,
+    path: String,
+    txData: Map<String, Any>
+  ): String? {
+    val privateKey = wallet.getKey(CoinType.TEZOS, path)
+    val opJson = JSONObject(txData).toString()
+    return AnySigner.signJSON(opJson, privateKey.data(), CoinType.TEZOS.value())
   }
 
-  private fun getPublicKey(wallet: HDWallet, coin: String, path: String): String? {
-    return when (coin) {
-      "BTC" -> {
-        val privateKey = wallet.getKey(CoinType.BITCOIN, path)
-        val publicKey = privateKey.getPublicKeySecp256k1(true)
-        Base64.getEncoder().encodeToString(publicKey.data())
-      }
-      "ETH" -> {
-        val privateKey = wallet.getKey(CoinType.ETHEREUM, path)
-        val publicKey = privateKey.getPublicKeySecp256k1(true)
-        Base64.getEncoder().encodeToString(publicKey.data())
-      }
-      "XTZ" -> {
-        val privateKey = wallet.getKey(CoinType.TEZOS, path)
-        val publicKey = privateKey.getPublicKeyEd25519()
-        Base64.getEncoder().encodeToString(publicKey.data())
-      }
-      "TRX" -> {
-        val privateKey = wallet.getKey(CoinType.TRON, path)
-        val publicKey = privateKey.getPublicKeySecp256k1(true)
-        Base64.getEncoder().encodeToString(publicKey.data())
-      }
-      "SOL" -> {
-        val privateKey = wallet.getKey(CoinType.SOLANA, path)
-        val publicKey = privateKey.getPublicKeyEd25519()
-        Base64.getEncoder().encodeToString(publicKey.data())
-      }
-      else -> null
-    }
+  private fun signEthereumTransaction(
+    wallet: HDWallet,
+    path: String,
+    txData: Map<String, Any>
+  ): String? {
+    val privateKey = wallet.getKey(CoinType.ETHEREUM, path)
+    val opJson = JSONObject(txData).toString()
+    return AnySigner.signJSON(opJson, privateKey.data(), CoinType.ETHEREUM.value())
   }
 
-  private fun getPrivateKey(wallet: HDWallet, coin: String, path: String): String? {
+  private fun signSolanaTransaction(
+    wallet: HDWallet,
+    path: String,
+    txData: Map<String, Any>
+  ): String? {
+    val privateKey = wallet.getKey(CoinType.SOLANA, path)
+    val opJson = JSONObject(txData).toString()
+    return AnySigner.signJSON(opJson, privateKey.data(), CoinType.SOLANA.value())
+  }
 
-    val coinType: CoinType = when (coin) {
+  private fun signBitcoinTransaction(
+    wallet: HDWallet,
+    path: String,
+    txData: Map<String, Any>
+  ): String {
+    val privateKey = wallet.getKey(CoinType.BITCOIN, path)
+    val utxos: List<Map<String, Any>> = txData["utxos"] as List<Map<String, Any>>
+
+    val input = Bitcoin.SigningInput.newBuilder()
+      .setAmount((txData["amount"] as Int).toLong())
+      .setHashType(BitcoinScript.hashTypeForCoin(CoinType.BITCOIN))
+      .setToAddress(txData["toAddress"] as String)
+      .setChangeAddress(txData["changeAddress"] as String)
+      .setByteFee(1)
+      .addPrivateKey(ByteString.copyFrom(privateKey.data()))
+
+    for (utx in utxos) {
+      val txHash = Numeric.hexStringToByteArray(utx["txid"] as String)
+      txHash.reverse()
+      val outPoint = Bitcoin.OutPoint.newBuilder()
+        .setHash(ByteString.copyFrom(txHash))
+        .setIndex(utx["vout"] as Int)
+        .setSequence(Long.MAX_VALUE.toInt())
+        .build()
+      val txScript = Numeric.hexStringToByteArray(utx["script"] as String)
+      val utxo = Bitcoin.UnspentTransaction.newBuilder()
+        .setAmount((utx["value"] as Int).toLong())
+        .setOutPoint(outPoint)
+        .setScript(ByteString.copyFrom(txScript))
+        .build()
+      input.addUtxo(utxo)
+    }
+
+    var output = AnySigner.sign(input.build(), CoinType.BITCOIN, SigningOutput.parser())
+    // since we want to set our own fee
+    // but such functionality is not obvious in the trustWalletCore library
+    // a hack is used for now to calculate the byteFee
+    val size = output.encoded.toByteArray().size
+    val fees = (txData["fees"] as Int).toLong()
+
+    // this gives the fee per byte truncated to Long
+    val byteFee = fees.div(size)
+
+    // now we set new byte size
+    if (byteFee > 1) {
+      input.byteFee = byteFee
+    }
+    output = AnySigner.sign(input.build(), CoinType.BITCOIN, SigningOutput.parser())
+    return Numeric.toHexString(output.encoded.toByteArray())
+  }
+
+  private fun l(message: String) {
+    val tag = FormatUtil.pad30("TrustDart_").replace("-->", "")
+    channel.invokeMethod("on_log_sent", "$tag: $message")
+  }
+
+  private fun lt(tag: String, message: String) {
+    val paddedTag = FormatUtil.pad30(tag).replace("-->", "")
+    channel.invokeMethod("on_log_sent", "$paddedTag: $message")
+  }
+
+  private fun getCoinTypeFromSymbol(symbol: String): CoinType? {
+    return when (symbol) {
       "BTC" -> CoinType.BITCOIN
       "AE" -> CoinType.AETERNITY
       "AION" -> CoinType.AION
@@ -372,261 +599,7 @@ class TrustdartPlugin : FlutterPlugin, MethodCallHandler {
       "XDAI" -> CoinType.XDAI
       "FTM" -> CoinType.FANTOM
       else -> null
-    } ?: return null
-
-    val privateKey = wallet.getKey(coinType, path)
-    return Base64.getEncoder().encodeToString(privateKey.data())
-  }
-
-  private fun signTransaction(
-    wallet: HDWallet,
-    coin: String,
-    path: String,
-    txData: Map<String, Any>
-  ): String? {
-    return when (coin) {
-      "XTZ" -> {
-        signTezosTransaction(wallet, path, txData)
-      }
-      "ETH" -> {
-        signEthereumTransaction(wallet, path, txData)
-      }
-      "BTC" -> {
-        signBitcoinTransaction(wallet, path, txData)
-      }
-      "TRX" -> {
-        signTronTransaction(wallet, path, txData)
-      }
-      "SOL" -> {
-        signSolanaTransaction(wallet, path, txData)
-      }
-      else -> null
-    }
-  }
-
-  private fun signTronTransaction(
-    wallet: HDWallet,
-    path: String,
-    txData: Map<String, Any>
-  ): String? {
-    val cmd = txData["cmd"] as String
-    val privateKey = wallet.getKey(CoinType.TRON, path)
-    val txHash: String?;
-    when (cmd) {
-      "TRC20" -> {
-        val trc20Contract = Tron.TransferTRC20Contract.newBuilder()
-          .setOwnerAddress(txData["ownerAddress"] as String)
-          .setContractAddress(txData["contractAddress"] as String)
-          .setToAddress(txData["toAddress"] as String)
-          .setAmount(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["amount"] as String))))
-
-        val blockHeader = Tron.BlockHeader.newBuilder()
-          .setTimestamp(txData["blockTime"] as Long)
-          .setTxTrieRoot(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["txTrieRoot"] as String))))
-          .setParentHash(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["parentHash"] as String))))
-          .setNumber((txData["number"] as Int).toLong())
-          .setWitnessAddress(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["witnessAddress"] as String))))
-          .setVersion(txData["version"] as Int)
-          .build()
-
-        val transaction = Tron.Transaction.newBuilder()
-          .setTimestamp(txData["timestamp"] as Long)
-          .setTransferTrc20Contract(trc20Contract)
-          .setBlockHeader(blockHeader)
-          .setFeeLimit((txData["feeLimit"] as Int).toLong())
-          .build()
-
-        val signingInput = Tron.SigningInput.newBuilder()
-          .setTransaction(transaction)
-          .setPrivateKey(ByteString.copyFrom(privateKey.data()))
-
-        val output =
-          AnySigner.sign(signingInput.build(), CoinType.TRON, Tron.SigningOutput.parser())
-        txHash = output.json
-      }
-      "TRC10" -> {
-        val trc10Contract = Tron.TransferAssetContract.newBuilder()
-          .setOwnerAddress(txData["ownerAddress"] as String)
-          .setAssetName(txData["assetName"] as String)
-          .setToAddress(txData["toAddress"] as String)
-          .setAmount((txData["amount"] as Int).toLong())
-
-        val blockHeader = Tron.BlockHeader.newBuilder()
-          .setTimestamp(txData["blockTime"] as Long)
-          .setTxTrieRoot(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["txTrieRoot"] as String))))
-          .setParentHash(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["parentHash"] as String))))
-          .setNumber((txData["number"] as Int).toLong())
-          .setWitnessAddress(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["witnessAddress"] as String))))
-          .setVersion(txData["version"] as Int)
-          .build()
-
-        val transaction = Tron.Transaction.newBuilder()
-          .setTimestamp(txData["timestamp"] as Long)
-          .setTransferAsset(trc10Contract)
-          .setBlockHeader(blockHeader)
-          .build()
-
-        val signingInput = Tron.SigningInput.newBuilder()
-          .setTransaction(transaction)
-          .setPrivateKey(ByteString.copyFrom(privateKey.data()))
-
-        val output =
-          AnySigner.sign(signingInput.build(), CoinType.TRON, Tron.SigningOutput.parser())
-        txHash = output.json
-      }
-      "TRX" -> {
-        val transfer = Tron.TransferContract.newBuilder()
-          .setOwnerAddress(txData["ownerAddress"] as String)
-          .setToAddress(txData["toAddress"] as String)
-          .setAmount((txData["amount"] as Int).toLong())
-
-        val blockHeader = Tron.BlockHeader.newBuilder()
-          .setTimestamp(txData["blockTime"] as Long)
-          .setTxTrieRoot(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["txTrieRoot"] as String))))
-          .setParentHash(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["parentHash"] as String))))
-          .setNumber((txData["number"] as Int).toLong())
-          .setWitnessAddress(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["witnessAddress"] as String))))
-          .setVersion(txData["version"] as Int)
-          .build()
-
-        val transaction = Tron.Transaction.newBuilder()
-          .setTimestamp(txData["timestamp"] as Long)
-          .setTransfer(transfer)
-          .setBlockHeader(blockHeader)
-          .build()
-
-        val signingInput = Tron.SigningInput.newBuilder()
-          .setTransaction(transaction)
-          .setPrivateKey(ByteString.copyFrom(privateKey.data()))
-
-        val output =
-          AnySigner.sign(signingInput.build(), CoinType.TRON, Tron.SigningOutput.parser())
-        txHash = output.json
-      }
-      "FREEZE" -> {
-        val freezeContract = Tron.FreezeBalanceContract.newBuilder()
-          .setOwnerAddress(txData["ownerAddress"] as String)
-          .setResource(txData["resource"] as String)
-          .setFrozenDuration((txData["frozenDuration"] as Int).toLong())
-          .setFrozenBalance((txData["frozenBalance"] as Int).toLong())
-
-        val blockHeader = Tron.BlockHeader.newBuilder()
-          .setTimestamp(txData["blockTime"] as Long)
-          .setTxTrieRoot(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["txTrieRoot"] as String))))
-          .setParentHash(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["parentHash"] as String))))
-          .setNumber((txData["number"] as Int).toLong())
-          .setWitnessAddress(ByteString.copyFrom(Numeric.hexStringToByteArray((txData["witnessAddress"] as String))))
-          .setVersion(txData["version"] as Int)
-          .build()
-
-        val transaction = Tron.Transaction.newBuilder()
-          .setTimestamp(txData["timestamp"] as Long)
-          .setFreezeBalance(freezeContract)
-          .setBlockHeader(blockHeader)
-          .build()
-
-        val signingInput = Tron.SigningInput.newBuilder()
-          .setTransaction(transaction)
-          .setPrivateKey(ByteString.copyFrom(privateKey.data()))
-
-        val output =
-          AnySigner.sign(signingInput.build(), CoinType.TRON, Tron.SigningOutput.parser())
-        txHash = output.json
-      }
-      "CONTRACT" -> {
-        txHash = null
-      }
-      else -> txHash = null;
-    }
-    return txHash;
-  }
-
-  private fun signTezosTransaction(
-    wallet: HDWallet,
-    path: String,
-    txData: Map<String, Any>
-  ): String? {
-    val privateKey = wallet.getKey(CoinType.TEZOS, path)
-    val opJson = JSONObject(txData).toString();
-    val result = AnySigner.signJSON(opJson, privateKey.data(), CoinType.TEZOS.value())
-    return result
-  }
-
-  private fun signEthereumTransaction(
-    wallet: HDWallet,
-    path: String,
-    txData: Map<String, Any>
-  ): String? {
-    val privateKey = wallet.getKey(CoinType.ETHEREUM, path)
-    val opJson = JSONObject(txData).toString();
-    val result = AnySigner.signJSON(opJson, privateKey.data(), CoinType.ETHEREUM.value())
-    return result
-  }
-
-  private fun signSolanaTransaction(
-    wallet: HDWallet,
-    path: String,
-    txData: Map<String, Any>
-  ): String? {
-    val privateKey = wallet.getKey(CoinType.SOLANA, path)
-    val opJson = JSONObject(txData).toString();
-    val result = AnySigner.signJSON(opJson, privateKey.data(), CoinType.SOLANA.value())
-    return result
-  }
-
-  private fun signBitcoinTransaction(
-    wallet: HDWallet,
-    path: String,
-    txData: Map<String, Any>
-  ): String? {
-    val privateKey = wallet.getKey(CoinType.BITCOIN, path)
-    val utxos: List<Map<String, Any>> = txData["utxos"] as List<Map<String, Any>>
-
-    val input = Bitcoin.SigningInput.newBuilder()
-      .setAmount((txData["amount"] as Int).toLong())
-      .setHashType(BitcoinScript.hashTypeForCoin(CoinType.BITCOIN))
-      .setToAddress(txData["toAddress"] as String)
-      .setChangeAddress(txData["changeAddress"] as String)
-      .setByteFee(1)
-      .addPrivateKey(ByteString.copyFrom(privateKey.data()))
-
-    for (utx in utxos) {
-      val txHash = Numeric.hexStringToByteArray(utx["txid"] as String);
-      txHash.reverse();
-      val outPoint = Bitcoin.OutPoint.newBuilder()
-        .setHash(ByteString.copyFrom(txHash))
-        .setIndex(utx["vout"] as Int)
-        .setSequence(Long.MAX_VALUE.toInt())
-        .build()
-      val txScript = Numeric.hexStringToByteArray(utx["script"] as String);
-      val utxo = Bitcoin.UnspentTransaction.newBuilder()
-        .setAmount((utx["value"] as Int).toLong())
-        .setOutPoint(outPoint)
-        .setScript(ByteString.copyFrom(txScript))
-        .build()
-      input.addUtxo(utxo)
     }
 
-    var output = AnySigner.sign(input.build(), CoinType.BITCOIN, Bitcoin.SigningOutput.parser())
-    // since we want to set our own fee
-    // but such functionality is not obvious in the trustwalletcore library
-    // a hack is used for now to calculate the byteFee
-    val size = output.encoded.toByteArray().size;
-    val fees = (txData["fees"] as Int).toLong()
-    val byteFee = fees.div(size) // this gives the fee per byte truncated to Long
-    // now we set new byte size
-    if (byteFee > 1) input.setByteFee(byteFee)
-    output = AnySigner.sign(input.build(), CoinType.BITCOIN, Bitcoin.SigningOutput.parser())
-    return Numeric.toHexString(output.encoded.toByteArray())
-  }
-
-  private fun l(message: String) {
-    val tag = FormatUtil.pad30("TrustDart_").replace("-->", "")
-    channel.invokeMethod("on_log_sent", "$tag: $message")
-  }
-
-  private fun lt(tag: String, message: String) {
-    val paddedTag = FormatUtil.pad30(tag).replace("-->", "")
-    channel.invokeMethod("on_log_sent", "$paddedTag: $message")
   }
 }
